@@ -29,6 +29,7 @@
 
 using namespace std;
 
+
 Double_t *a;
 Double_t *b;
 Double_t *c;
@@ -66,7 +67,17 @@ TF1* f1;
 bool isotropic = false;
 
 //Main function
-void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, int nevents, Bool_t is_ppn, Bool_t is_ppa, Bool_t is_isotropic, Bool_t is_direct, Bool_t is_nnp)
+void run(Char_t * root_filename,
+        Char_t * ascii_filename,
+        Char_t * input_filename, 
+        char   * theory_mom_filename,
+        int nevents,
+        Bool_t is_ppn,
+        Bool_t is_ppa, 
+        Bool_t is_isotropic,
+        Bool_t is_direct,
+        Bool_t is_nnp
+        )
 {
     TTree *tr = new TTree("tr","data");
 
@@ -90,6 +101,12 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
     //Cross section function
     f1 = new TF1("f1",funct,0.,180.,0);
 
+    //Theoretical momentum disribution
+    TH1F * h_momentum_theory;
+    if(theory_mom_filename)
+        h_momentum_theory = Theoretical_Momentum(theory_mom_filename);
+
+
     //------- Output tree ----------
     TFile file(root_filename,"RECREATE");
     TTree *tree = new TTree("tree","Tree with simulated QFS kinematics");
@@ -103,20 +120,24 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
     const double MB   = MASS_B + EXE; 
 
     double Ma = PROTON_MASS;
-    
+
     std::cout << "\n-- Max events = " << nevents;
 
     if(is_isotropic){
         isotropic = true;
-        cout << "\n-- Generating isotropic nucleon distribution!" << endl;
+        cout << "\n-- Using isotropic nucleon distribution!" << endl;
     }
     else{
         isotropic = false ;
-        cout <<  "\n-- Generating parametrized anisotropic nucleon distribution!";
+        cout <<  "\n-- Using parametrized anisotropic nucleon distribution!";
     }
 
     if(!is_direct){
         cout << "\n-- Assuming inverse kinematics";
+    }
+
+    if(theory_mom_filename){
+        cout << "\n-- Using theoretical momentum distribution of nucleons inside A";
     }
 
     if(is_ppn){
@@ -162,7 +183,7 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
         cout << "\nTotal momentum:\t" << PA << " MeV";
         cout << "\nTotal energy:\t"   << EA << " MeV";
         cout << "\nBeta (beam):\t" << (-bA) << "\nGamma (beam):\t" << gA << "\n\n";
-        cout << "\nProcessing " << MAX_STORY << " events........\n\n";
+        cout << "\nProcessing " << nevents << " events........\n\n";
     }
 
     else//direct kinematics
@@ -180,7 +201,7 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
         cout << "\nTotal energy:\t"   << Ei << " MeV";
         cout << "\nBeta (beam):\t" << (-bi) << "\nGamma (beam):\t" << gi;
         cout << "\nMandelstam S:\t" << S_first << " MeV\n\n";
-        cout << "\nProcessing " << MAX_STORY << " events........\n\n";
+        cout << "\nProcessing " << nevents << " events........\n\n";
     }
 
     //Random number generators in ROOT 
@@ -194,13 +215,13 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
     TH1F* input_xy;
     TH1F* input_z;
 
-    if(strcmp(input_filename,"gauss")==1)
-    {
-        TFile* input_p = TFile::Open(input_filename,"READ");
+    //if(strcmp(input_filename,"gauss")==1)
+    //{
+    //    TFile* input_p = TFile::Open(input_filename,"READ");
 
-        input_xy  = (TH1F*) input_p->Get("p_y")->Clone("input_xy");
-        input_z   = (TH1F*) input_p->Get("p_z")->Clone("input_z");
-    }
+    //    input_xy  = (TH1F*) input_p->Get("p_y")->Clone("input_xy");
+    //    input_z   = (TH1F*) input_p->Get("p_z")->Clone("input_z");
+    //}
 
     //Output text file for R3BROOT event generator
     ofstream outfile;
@@ -212,21 +233,28 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
     if(is_direct) LVi.SetPxPyPzE(0.0,0.0,Pi,Ei);
     else LVi.SetPxPyPzE(0.0,0.0,0.0,Mi);
 
-    TVector3 Pa;
-    TVector3 P1cm(0.000000000001,0.0,0.0);
-    TVector3 P2cm(0.000000000001,0.0,0.0);
+    TVector3 Pa(1e-9,0.0,0.0);
+    TVector3 P1cm(1e-9,0.0,0.0);
+    TVector3 P2cm(1e-9,0.0,0.0);
 
     int events = 0;//generated event counter
     while(events<nevents) //eventloop
     {
-
         //------------ Internal momentum of a cluster -------------------
-        TVector3 Pa;	
-        if(strcmp(input_filename,"gauss")==1)
-        {	
-            Pa.SetX(input_xy->GetRandom());
-            Pa.SetY(input_xy->GetRandom());
-            Pa.SetZ(input_z->GetRandom());
+        //if(strcmp(input_filename,"gauss")==1)
+        //{	
+        //    Pa.SetX(input_xy->GetRandom());
+        //    Pa.SetY(input_xy->GetRandom());
+        //    Pa.SetZ(input_z->GetRandom());
+        //}
+        
+        //Random sampling from theoretical momentum if filename is not NULL(e.g. main optin is given)
+        if(theory_mom_filename)
+        {
+            Pa.SetMag(h_momentum_theory->GetRandom());
+            Pa.SetTheta( TMath::ACos(2.* (r1.Uniform(0.,1.)) - 1.));
+            Pa.SetPhi(2.*TMath::Pi()  * (r1.Uniform(0.,1.)) );
+
         }
         else
         {
@@ -253,7 +281,7 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
             continue;	
         }
         //Off-shell mass of the bound cluster
-        
+
         double Ma_off = sqrt(rrtt);
         //Total energies of "a" and "B" in the restframe of "A"
         double EaL  = sqrt(Ma_off*Ma_off + Pa.Mag2()); 
@@ -316,11 +344,11 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
 
         //if(is_direct)
         //{
-            direction = direction.Unit();
-            P1cm.RotateUz(direction);
-            P2cm.RotateUz(direction);
-            P1L = P1cm;
-            P2L = P2cm;
+        direction = direction.Unit();
+        P1cm.RotateUz(direction);
+        P2cm.RotateUz(direction);
+        P1L = P1cm;
+        P2L = P2cm;
         //}
 
         //else
@@ -380,6 +408,7 @@ void run(Char_t *root_filename,Char_t *ascii_filename, Char_t *input_filename, i
 
     //tree->Print();
     tree->AutoSave();
+    if(theory_mom_filename) h_momentum_theory->Write();
     file.Close();
 
     return;
@@ -534,11 +563,75 @@ double get_T(double sm, double max)
     return (Trand*1000000); // returning value in MeV²
 }
 
+//This is a function to read theoretical momentum distribution (e.g. C.Bertulani)
+//Input ASCII file has only two columns: 1: Total Momentum 2: Cross section(Probability)
+//The returned value is a histogram which will be randomly sampled inside the main function run()
+TH1F* Theoretical_Momentum(char* filename)
+{
+    //===== Reading data from the input file =====
+    int NPoints=0;//number of line in the input file
+    int i=0;//iterator
+    ifstream infile(filename);
+    std::string line;
+    while ( std::getline(infile, line) ) NPoints++;
+    infile.clear();
+    infile.seekg( 0, std::ios::beg );
+    float Q[NPoints], dS_dQ[NPoints];//data from input file
+    while(1)
+    {
+        infile >> Q[i] >> dS_dQ[i];
+        if(!infile.good()) break;
+        i++;
+    }
+    infile.close();
+
+    //===== Now making histogram from Graph and compute Histogram bins
+    TGraph * gQ = new TGraph(NPoints,Q,dS_dQ);
+    Double_t BinLimits[NPoints+1];
+    gQ->Sort();
+    // determine lower limit of histogram: half the distance to next point
+    Double_t x0,x1,y;
+    gQ->GetPoint(0,x0,y);
+    gQ->GetPoint(1,x1,y);
+    Double_t Distance = TMath::Abs(x0-x1);
+    BinLimits[0] = x0 - Distance/2.;
+    // now set upper limits for all the other points
+    for (Int_t k = 0 ; k<NPoints-1;k++)
+    {
+        gQ->GetPoint(k,x0,y);
+        gQ->GetPoint(k+1,x1,y);
+        Distance = TMath::Abs(x0-x1);
+        BinLimits[k+1] = x0 + Distance/2.;
+    }
+    // for the last point set upper limit similar to first point:
+    gQ->GetPoint(NPoints-2,x0,y);
+    gQ->GetPoint(NPoints-1,x1,y);
+    Distance = TMath::Abs(x0-x1);
+    BinLimits[NPoints] = x1 + Distance/2.;
+    // now we know the binning and can create the histogram:
+    TString Name = "Theoretical_Momentum"; 
+    // make name unique 
+    //Name+= rand();
+    TH1F *ThisHist = new TH1F(Name,Name,NPoints,BinLimits);
+    // now fill the histogram
+    for (Int_t i = 0; i<gQ->GetN();i++)
+    {
+        Double_t x,y;
+        gQ->GetPoint(i,x,y);
+        ThisHist->SetBinContent(i+1,y);
+        ThisHist->SetBinError(i+1,1e-14);
+    }
+    return ThisHist;
+}
+
+
 int main(Int_t argc, Char_t* argv[])
 {
     Char_t *root_filename=0;
     Char_t *ascii_filename=0;
     Char_t *input_filename=0;
+
+    char* theory_mom_filename=NULL;
 
     int nevents = MAX_STORY;
 
@@ -567,6 +660,11 @@ int main(Int_t argc, Char_t* argv[])
             else if (strncmp(argv[i],"--input=",8) == 0)
             {
                 input_filename = argv[i]+8;
+            }
+
+            else if (strncmp(argv[i],"--theory_mom=",13) == 0)
+            {
+                theory_mom_filename = argv[i]+13;
             }
 
             else if (strncmp(argv[i],"--max-events=",13) == 0)
@@ -609,22 +707,37 @@ int main(Int_t argc, Char_t* argv[])
 
     if (NeedHelp)
     {
-        std::cout << "\nOptions:                                                             " << std::endl;
-        std::cout << "  --root=/path/to/your/file/filename.root : root file name         \n" << std::endl;
-        std::cout << "  --ascii=/path/to/your/file/filename.root : ascii file name         \n" << std::endl;
-        std::cout << "  --input=/path/to/your/file/filename.root : root file with momentum histograms, type 'gauss' to use Gaussian distribution with width specified in info.hh instead.\n" << std::endl;
-        std::cout << "  --max-events = Number of generated events        \n" << std::endl;
-        std::cout << "  --ppn = Generate (p,pn)-data       \n" << std::endl;
-        std::cout << "  --nnp = Generate (n,np)-data -> only with is_direct option\n" << std::endl;
-        std::cout << "  --direct-kinematics = Assuming direct reaction kinematics\n" << std::endl;
-        std::cout << "  --ppa = Generate (p,pa)-data.  If no option is specified events will be (p,2p).      \n" << std::endl;
-        std::cout << "  --not_iso = Generate anisotropic nucleon-distributions.  If no option is specified events will be homegeneous.      \n" << std::endl;
+        std::cout << "\nOptions:\n\n";
+        std::cout << "  --direct-kinematics -> Assuming direct reaction kinematics\n\n";
+        std::cout << "  --ppn -> Generate (p,pn)-data\n\n";
+        std::cout << "  --nnp -> Generate (n,np)-data -> only with is_direct option\n\n";
+        std::cout << "  --ppa -> Generate (p,pa)-data.  If no option is specified events will be (p,2p).\n\n";
+        std::cout << "  --max-events -> Number of generated events\n\n";
+        std::cout << "  --input=/path/to/your/file/filename.root -> root file with momentum histograms, type 'gauss' to use Gaussian distribution with width specified in info.hh instead.\n\n";
+        std::cout << "  --ascii=/path/to/your/file/filename.dat -> ascii file name\n\n";
+        std::cout << "  --theory_mom=/path/to/your/file/filename.dat -> input ASCII file with Theoretical_Momentum distribution inside A nucleus. Expecting two-column format (1st: Total momentum, 2nd: Cross section(Probability) )\n\n"; 
+        std::cout << "  --root=/path/to/your/file/filename.root -> output root file name\n\n";
+        std::cout << "  --not_iso -> Generate anisotropic nucleon-distributions.  If no option is specified events will be homegeneous.\n\n";
         return 0;
     }
 
+
+    //Main generator function
     if(root_filename!=NULL && ascii_filename!=NULL) 
-        run(root_filename,ascii_filename,input_filename,nevents,is_ppn,is_ppa,is_isotropic, is_direct, is_nnp);
-    else if (ascii_filename==NULL)
+    {
+        run(root_filename,
+                ascii_filename,
+                input_filename,
+                theory_mom_filename,
+                nevents,
+                is_ppn,
+                is_ppa,
+                is_isotropic,
+                is_direct,
+                is_nnp);
+    }
+
+    else if(ascii_filename==NULL)
     {
         std::cout << "\nASCII FILE IS NOT SPECIFIED!!!\nType: ./qfs \n\n" << std::endl;
         return 0;
@@ -639,7 +752,6 @@ int main(Int_t argc, Char_t* argv[])
         std::cout << "\nROOT FILE IS NOT SPECIFIED!!!\nType: ./qfs \n\n" << std::endl;
         return 0;
     }
-
 
     return 0;
 }
